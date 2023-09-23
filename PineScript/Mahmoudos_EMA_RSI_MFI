@@ -1,0 +1,81 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © mahmoudos
+
+//@version=5
+strategy("Mahmoudos EMA & RSI % MFI Strategy", overlay=true, initial_capital = 100000, default_qty_type = strategy.percent_of_equity)
+// strategy("Mahmoudos EMA & RSI % MFI Strategy", initial_capital = 100000, default_qty_type = strategy.percent_of_equity)
+
+// Calculating EMA 
+emalength = input.int(defval = 400, title = "EMA Length")
+theEMA = ta.ema(close, emalength)
+
+// mahmoudos ema trading longic
+ema_buy_trigger = theEMA < close
+ema_sell_trigger = theEMA > close
+
+// Combining RSI - Relative strength index &&  MFI - Money Flow Index
+rsilength = input.int(defval = 20, title = "RSI Length", group = "Relative Strength Index")
+rsiSource = input.source(defval = close, title = "RSI Source", group = "Relative Strength Index")
+isRSIUp = ta.rma(math.max(ta.change(rsiSource), 0), rsilength)
+isRSIDown = ta.rma(-math.min(ta.change(rsiSource), 0), rsilength)
+theNeededRSI = isRSIDown == 0 ? isRSIUp == 0 ? 0 : 100 - (100 / ( 1 + isRSIUp / isRSIDown)) : 0
+
+mfilengh = input.int(defval = 14, title = "MFI Length", minval=1, maxval=3000)
+mfiSource = hlc3
+theNeededMFI = ta.mfi(mfiSource, mfilengh)
+
+// mahmoudos rsi and mfi trading longic
+rsi_mfi_result = (theNeededRSI + theNeededMFI) / 2
+rsimfi_buy_trigger = rsi_mfi_result >= 70
+rsimfi_sell_trigger = rsi_mfi_result <= 40
+
+// mahmoudos SL and TP
+percent_based = input.float(defval = 8.0, title = "% Stop Muliplier", minval= 0.0, step= 0.5)
+r_ratio = input.float(defval = 1.0, title = "Risk Reward ratio", minval= 0.0, step= 0.5)
+
+stop_loss_amount = close * percent_based / 100
+
+bought = strategy.position_size[0] > strategy.position_size[1]
+since_entry_long = ta.barssince(bought)
+
+sold = strategy.position_size[0] < strategy.position_size[1]
+since_entry_short = ta.barssince(sold)
+
+price_stop_long =  0.0
+price_stop_short = 1000000000000.0
+targetvalue_long = 0.0
+targetvalue_short = 0.0
+stopvalue_long = 0.0
+stopvalue_short = 0.0
+
+if (strategy.position_size > 0)
+    stopvalue_long := close - stop_loss_amount
+    price_stop_long := close[since_entry_long] - stop_loss_amount[since_entry_long]
+    targetvalue_long := close[since_entry_long] + (close[since_entry_long] * (percent_based / 100) * r_ratio)
+else 
+    stopvalue_long := 0.0
+
+if (strategy.position_size < 0)
+    stopvalue_short := close + stop_loss_amount
+    price_stop_short := close[since_entry_short] + stop_loss_amount[since_entry_short]
+    targetvalue_short := close[since_entry_short] - (close[since_entry_short] * (percent_based / 100) * r_ratio)
+else 
+    stopvalue_short := 1000000000000.0
+
+if (ema_buy_trigger == true and rsimfi_buy_trigger == true and strategy.position_size <= 0)
+    strategy.entry('Long', strategy.long, qty = 1000)
+
+if (ema_sell_trigger == true and rsimfi_sell_trigger == true and strategy.position_size >= 0)
+    strategy.entry('Short', strategy.short, qty = 1000)
+
+if (strategy.position_size > 0)
+    strategy.exit('Long Exit', from_entry = 'Long', limit = targetvalue_long, stop = price_stop_long)
+
+if (strategy.position_size < 0)
+    strategy.exit('Short Exit', from_entry = 'Short', limit = targetvalue_short, stop = price_stop_short)
+
+P1 = plot(price_stop_long > 0 ? price_stop_long : na, "SL long", color = color.purple, style = plot.style_linebr)
+P2 = plot(price_stop_long > 0 ? targetvalue_long : na, "T long", color = color.aqua, style = plot.style_linebr)
+
+P3 = plot(price_stop_short > 0 ? price_stop_short : na, "SL long", color = color.purple, style = plot.style_linebr)
+P4 = plot(price_stop_short > 0 ? targetvalue_short : na, "T long", color = color.aqua, style = plot.style_linebr)
